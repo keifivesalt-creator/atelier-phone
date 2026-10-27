@@ -3,7 +3,9 @@
 # 2回目から: 変わったファイルを push するだけ（ログインはもう聞かれない）
 # ページにはプログラムだけ。記録は Supabase にあって、合言葉（%LOCALAPPDATA%\atelier_agent\phone_token.txt）がないと読めない
 
-$ErrorActionPreference = "Stop"
+# "Stop" にすると、gh や git がエラー出力に書いただけ（「まだリポジトリがない」・push の進み具合など）で止まってしまう
+# （Windows PowerShell 5.1）。なので止めずに、大事なところは $LASTEXITCODE で確かめる
+$ErrorActionPreference = "Continue"
 $gh = "C:\Program Files\GitHub CLI\gh.exe"
 $repo = "atelier-phone"
 Set-Location -LiteralPath $PSScriptRoot
@@ -36,6 +38,7 @@ if ($LASTEXITCODE -ne 0) {
 } else {
     if (-not (git remote)) { git remote add origin "https://github.com/$login/$repo.git" }
     git push -u origin main
+    if ($LASTEXITCODE -ne 0) { throw "push できませんでした" }
 }
 
 # GitHub Pages（main ブランチのいちばん上）をオン。もうオンならそのまま
