@@ -1,0 +1,452 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="アトリエ">
+<meta name="theme-color" content="#fff8fb">
+<link rel="apple-touch-icon" href="icon.png">
+<link rel="manifest" href="manifest.webmanifest">
+<title>アトリエ・エージェント</title>
+<style>
+  /* アトリエ・エージェントのホーム画面（home.py）と同じ色 */
+  :root { --bg: #fff8fb; --card: #ffffff; --line: #f0dbe4; --text: #4a3a44; --sub: #8a7a84;
+          --pink: #ff7aa8; --renshuu: #9a7fd6; --track: #f3e4ea; --urgent: #e0475b; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #1d171b; --card: #2a2227; --line: #3d3238; --text: #f3e6ee; --sub: #b6a5af;
+            --track: #3d3238; --urgent: #ff6b7d; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font-family: -apple-system, "Hiragino Sans", "Yu Gothic UI", "Meiryo", sans-serif;
+         padding: max(16px, env(safe-area-inset-top)) 16px calc(24px + env(safe-area-inset-bottom)); }
+  main { max-width: 560px; margin: 0 auto; display: flex; flex-direction: column; gap: 12px; }
+  .top { display: flex; gap: 12px; align-items: flex-start; }
+  .top .grow { flex: 1; min-width: 0; }
+  h1 { margin: 0; font-size: 19px; color: var(--pink); }
+  .sub { color: var(--sub); font-size: 12px; }
+  .clock { font-size: 32px; font-weight: 800; line-height: 1.1; margin-top: 2px; }
+  .face { width: 96px; height: 96px; border-radius: 18px; object-fit: cover; background: var(--track); }
+  .card { background: var(--card); border: 1px solid var(--line); border-left: 6px solid var(--pink);
+          border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; }
+  .card.renshuu { border-left-color: var(--renshuu); }
+  .card h2 { margin: 0; font-size: 13px; color: var(--pink); }
+  .card.renshuu h2 { color: var(--renshuu); }
+  .big { font-size: 16px; font-weight: 700; }
+  .todo div { font-size: 14px; margin: 2px 0; }
+  .bar { height: 12px; background: var(--track); border-radius: 6px; overflow: hidden; position: relative; }
+  .bar > i { display: block; height: 100%; background: var(--pink); border-radius: 6px; }
+  .renshuu .bar > i { background: var(--renshuu); }
+  .bar > span { position: absolute; inset: 0; font-size: 10px; text-align: center; line-height: 12px; color: var(--text); }
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px 10px; }
+  .grid .k { color: var(--sub); font-size: 12px; }
+  .grid .v { font-size: 18px; font-weight: 700; }
+  .count b { font-size: 30px; }
+  .count .m { font-size: 19px; font-weight: 800; }
+  .urgent { color: var(--urgent); }
+  .row { display: flex; gap: 8px; align-items: center; }
+  .row .grow { flex: 1; min-width: 0; }
+  button { font: inherit; font-size: 14px; border-radius: 10px; border: 1px solid var(--line); background: var(--card);
+           color: var(--text); padding: 10px 14px; min-height: 44px; }
+  button.main { background: var(--renshuu); color: #fff; border: none; font-weight: 700; }
+  button:disabled { opacity: .5; }
+  svg text { fill: var(--sub); font-size: 11px; }
+  .toast { position: fixed; left: 50%; bottom: calc(20px + env(safe-area-inset-bottom)); transform: translateX(-50%);
+           background: var(--text); color: var(--bg); padding: 10px 16px; border-radius: 20px; font-size: 13px;
+           opacity: 0; transition: opacity .3s; pointer-events: none; max-width: 90vw; }
+  .toast.show { opacity: .95; }
+  .login { display: flex; flex-direction: column; gap: 10px; }
+  .login input { font: inherit; padding: 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--card); color: var(--text); }
+  .err { color: var(--urgent); font-size: 13px; white-space: pre-wrap; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <section id="login" class="card login" hidden>
+    <h2>はじめに</h2>
+    <div>Google ドライブの「スマホのページ.txt」にあるリンクから開いてください。<br>または、合言葉をここに貼ってください。</div>
+    <input id="tokenInput" type="password" autocomplete="off" placeholder="合言葉">
+    <button id="tokenSave" class="main">保存して開く</button>
+    <div id="loginErr" class="err"></div>
+  </section>
+
+  <div id="app" hidden>
+    <div class="top">
+      <div class="grow">
+        <h1>アトリエ・エージェント</h1>
+        <div class="sub" id="stamp"></div>
+        <div class="sub" id="date"></div>
+        <div class="clock" id="clock"></div>
+      </div>
+      <img class="face" id="face" alt="">
+    </div>
+
+    <section class="card">
+      <h2 id="koTitle">♡ なかよし度</h2>
+      <div class="bar"><i id="koBar"></i></div>
+      <div class="sub" id="koSub"></div>
+    </section>
+
+    <section class="card todo">
+      <h2>今日のやること</h2>
+      <div id="todoManga"></div>
+      <div id="todoRenshuu"></div>
+    </section>
+
+    <section class="card">
+      <h2>締め切りまで</h2>
+      <div class="sub" id="dlWhen"></div>
+      <div class="count" id="dlCount"></div>
+      <div id="dlRest" style="font-size:13px"></div>
+    </section>
+
+    <section class="card">
+      <h2>今日の記録</h2>
+      <div class="grid" id="stats"></div>
+      <div class="bar" style="height:14px"><i id="goalBar"></i><span id="goalText"></span></div>
+    </section>
+
+    <section class="card">
+      <h2>① エロ漫画（作品）</h2>
+      <div class="big" id="work"></div>
+      <div class="sub" id="workDetail"></div>
+      <div class="bar" style="height:14px"><i id="projBar"></i><span id="projText"></span></div>
+      <div class="sub" id="workTimes"></div>
+    </section>
+
+    <section class="card renshuu">
+      <h2>② 毎日の練習（演出大事典）</h2>
+      <div class="row">
+        <div class="grow">
+          <div class="big" id="renshuu"></div>
+          <div class="sub" id="renshuuPending"></div>
+        </div>
+        <button id="minus">−1</button>
+        <button id="plus" class="main">+1ページ</button>
+      </div>
+      <div class="bar" style="height:14px"><i id="renshuuBar"></i><span id="renshuuText"></span></div>
+      <div style="font-size:13px" id="renshuuPace"></div>
+    </section>
+
+    <section class="card">
+      <h2>1週間の描いた時間</h2>
+      <svg id="chart" viewBox="0 0 340 170" width="100%" role="img" aria-label="1週間の描いた時間"></svg>
+    </section>
+    <div class="err" id="err"></div>
+  </div>
+</main>
+<div class="toast" id="toast"></div>
+
+<script>
+// データは Supabase の関数（phone_dashboard）から読む。合言葉を知っている人だけが読める（step5_phone.sql）。
+// このページ自体（GitHub Pages、公開）には記録は入っていない。publishable key は公開してよいキー。
+const SUPABASE_URL = "https://raolgxkcevpxgosoiuvb.supabase.co";
+const PUBLISHABLE_KEY = "sb_publishable_BOpNY_JzqQLtWUzg6R7UkA_15G0BG0t";
+const TOKEN_KEY = "atelier_phone_token";
+const $ = (id) => document.getElementById(id);
+let data = null;
+
+function storage(fn, fallback = null) { try { return fn(); } catch { return fallback; } }
+
+// 合言葉: リンクの #t=… → この iPhone に覚える（# のあとはサーバーに送られない）
+(function takeTokenFromHash() {
+  const m = location.hash.match(/[#&]t=([A-Za-z0-9_\-]+)/);
+  if (m) {
+    storage(() => localStorage.setItem(TOKEN_KEY, m[1]));
+    storage(() => sessionStorage.setItem(TOKEN_KEY, m[1]));
+    history.replaceState(null, "", location.pathname);
+  }
+})();
+const token = () => storage(() => localStorage.getItem(TOKEN_KEY)) || storage(() => sessionStorage.getItem(TOKEN_KEY));
+
+async function rpc(name, body) {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${name}`, {
+    method: "POST",
+    headers: { apikey: PUBLISHABLE_KEY, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const text = await res.text();
+  if (!res.ok) {
+    const err = new Error(text);
+    err.status = res.status;
+    err.invalid = /invalid token/.test(text);
+    throw err;
+  }
+  return text ? JSON.parse(text) : null;
+}
+
+// ---------- 日付（日本時間） ----------
+const pad = (n) => String(n).padStart(2, "0");
+function jstNow() { return new Date(Date.now() + (9 * 60 + new Date().getTimezoneOffset()) * 60000); }
+function iso(d) { return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; }
+function fromIso(s) { const [y, m, d] = s.split("-").map(Number); return new Date(y, m - 1, d); }
+function addDays(d, n) { const x = new Date(d); x.setDate(x.getDate() + n); return x; }
+const WEEK = "日月火水木金土";
+function fmtMin(min) {
+  min = Math.round(min);
+  const h = Math.floor(min / 60), m = min % 60;
+  return h ? (m ? `${h}時間${m}分` : `${h}時間`) : `${m}分`;
+}
+
+// ---------- progress.py / renshuu.py / koukando.py と同じ計算 ----------
+const P = {
+  isDone: (p, page, phase) => String(page) in (p.done[phase] || {}),
+  blockCount: (p) => Math.ceil(p.pages / p.block_size),
+  blockRange: (p, b) => [(b - 1) * p.block_size + 1, Math.min(p.pages, b * p.block_size)],
+  finished: (p) => p.block > P.blockCount(p),
+  total: (p) => p.pages * p.phases.length,
+  doneCount: (p) => p.phases.reduce((n, ph) => n + Array.from({ length: p.pages }, (_, i) => i + 1).filter((pg) => P.isDone(p, pg, ph)).length, 0),
+  remaining: (p) => P.total(p) - P.doneCount(p),
+  daysLeft: (p, today) => p.deadline ? Math.max(1, Math.round((fromIso(p.deadline) - fromIso(today)) / 864e5) + 1) : null,
+  entry: (p, today) => (p.days && p.days[today]) || { advanced: 0, goal: 0, done: [] },
+  perDay: (p, today) => {
+    const left = P.daysLeft(p, today);
+    if (!left || P.finished(p)) return 0;
+    return Math.ceil((P.remaining(p) + P.entry(p, today).advanced) / left);
+  },
+  describe: (p) => { if (P.finished(p)) return "全部おわり"; const [s, e] = P.blockRange(p, p.block); return `${s}〜${e}の${p.phase}`; },
+  detail: (p, entry) => p.phases.map((ph) => {
+    const pages = [...new Set((entry.done || []).filter((d) => d[1] === ph).map((d) => d[0]))].sort((a, b) => a - b);
+    return pages.length ? `${ph} ${pages.join("・")}` : "";
+  }).filter(Boolean).join(" ／ "),
+  stats: (p) => {
+    const out = {};
+    for (const ph of p.phases) {
+      const t = Object.entries((p.seconds || {})[ph] || {}).filter(([pg, s]) => s >= 300 && P.isDone(p, Number(pg), ph)).map(([, s]) => s);
+      if (t.length) out[ph] = [t.reduce((a, b) => a + b, 0) / t.length, t.length];
+    }
+    return out;
+  },
+  estimate: (p) => {
+    const st = P.stats(p); let sec = 0; const unknown = [];
+    for (const ph of p.phases) {
+      const left = Array.from({ length: p.pages }, (_, i) => i + 1).filter((pg) => !P.isDone(p, pg, ph)).length;
+      if (!left) continue;
+      if (st[ph]) {
+        const spent = Object.entries((p.seconds || {})[ph] || {}).filter(([pg]) => !P.isDone(p, Number(pg), ph)).reduce((a, [, s]) => a + Math.min(s, st[ph][0]), 0);
+        sec += Math.max(0, left * st[ph][0] - spent);
+      } else unknown.push(ph);
+    }
+    return [sec, unknown];
+  },
+};
+const R = {
+  total: (r) => r.last_page - r.first_page + 1,
+  done: (r) => Math.max(0, r.done_page - r.first_page + 1),
+  remaining: (r) => Math.max(0, r.last_page - r.done_page),
+  finished: (r) => r.done_page >= r.last_page,
+  today: (r, t) => (r.days || {})[t] || 0,
+  daysLeft: (r, t) => Math.max(1, Math.round((fromIso(r.deadline) - fromIso(t)) / 864e5) + 1),
+  perDay: (r, t) => Math.ceil((R.remaining(r) + R.today(r, t)) / R.daysLeft(r, t)),
+  pace: (r, t) => {
+    const days = Object.keys(r.days || {});
+    if (!days.length) return 0;
+    let d = fromIso(t);
+    if (R.today(r, t) < R.perDay(r, t)) d = addDays(d, -1);
+    const first = days.map(fromIso).reduce((a, b) => (a < b ? a : b));
+    const n = Math.min(7, Math.round((d - first) / 864e5) + 1);
+    if (n <= 0) return 0;
+    let sum = 0; for (let i = 0; i < n; i++) sum += (r.days || {})[iso(addDays(d, -i))] || 0;
+    return sum / n;
+  },
+  forecast: (r, t) => {
+    const speed = R.pace(r, t);
+    if (R.finished(r) || speed <= 0) return "まだわからない";
+    const start = R.today(r, t) < R.perDay(r, t) ? fromIso(t) : addDays(fromIso(t), 1);
+    const end = addDays(start, Math.ceil(R.remaining(r) / speed) - 1);
+    const diff = Math.round((fromIso(r.deadline) - end) / 864e5);
+    const when = `${end.getMonth() + 1}/${end.getDate()}ごろ`;
+    return diff > 0 ? `${when}（${diff}日早い）` : diff < 0 ? `${when}（${-diff}日おくれ）` : `${when}（ぴったり）`;
+  },
+};
+const K = {
+  levels: [0, 20, 40, 60, 80],
+  names: ["はじめまして", "なかよし", "だいすき", "ぞっこん", "めろめろ"],
+  level: (k) => K.levels.filter((n) => k.points >= n).length,
+  mood: (k) => (k.sune ? "すねてる" : k.mood >= 85 ? "ごきげん" : "ふつう"),
+};
+function ini(text, section, key, fallback) {
+  let cur = "";
+  for (const raw of (text || "").split(/\r?\n/)) {
+    const line = raw.trim();
+    if (line.startsWith("[")) cur = line.slice(1, -1);
+    else if (cur === section && !line.startsWith(";")) {
+      const m = line.match(/^([^=]+?)\s*=\s*(.*)$/);
+      if (m && m[1] === key) return m[2];
+    }
+  }
+  return fallback;
+}
+
+// ---------- 表示 ----------
+function setBar(id, value, max, textId, text) {
+  $(id).style.width = `${Math.max(0, Math.min(100, (value / Math.max(1, max)) * 100))}%`;
+  if (textId) $(textId).textContent = text;
+}
+
+function render() {
+  if (!data) return;
+  const st = data.state || {};
+  const parse = (k) => { try { return st[k] ? JSON.parse(st[k].content) : null; } catch { return null; } };
+  const p = parse("progress.json"), r = parse("renshuu.json"), k = parse("koukando.json"), rec = parse("kiroku.json");
+  const settings = st["settings.ini"] ? st["settings.ini"].content : "";
+  const now = jstNow(), today = iso(now);
+  const updated = [st["kiroku.json"], st["progress.json"]].filter(Boolean).map((s) => new Date(s.updated_at)).sort((a, b) => b - a)[0];
+  $("stamp").textContent = updated ? `PC の記録 ${updated.toLocaleString("ja-JP", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Tokyo" })} 時点` : "";
+  $("date").textContent = `${now.getFullYear()}年${now.getMonth() + 1}月${now.getDate()}日（${WEEK[now.getDay()]}）`;
+  $("clock").textContent = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
+  if (st["phone_face.b64"]) $("face").src = `data:image/png;base64,${st["phone_face.b64"].content.trim()}`;
+
+  if (k) {
+    const lv = K.level(k), low = K.levels[lv - 1], high = lv < 5 ? K.levels[lv] : 100;
+    $("koTitle").innerHTML = `♡ なかよし度 Lv.${lv}　<span style="color:var(--text);font-weight:400">${K.names[lv - 1]}</span>　<span class="${k.sune ? "urgent" : "sub"}" style="font-weight:400">きげん: ${K.mood(k)}</span>`;
+    setBar("koBar", k.points - low, high - low);
+    $("koSub").textContent = `${Math.floor(k.points)} / 100　${lv < 5 ? `次のレベルまで あと${Math.ceil(high - k.points)}` : "最高レベル♡"}`;
+  }
+
+  // 今日の記録（kiroku.json が今日のものなら。PC がまだ今日動いていなければ 0）
+  const todayRec = rec && rec.date === today ? rec : null;
+  const daily = Object.fromEntries((data.daily || []).map((d) => [d.day, d]));
+  const iphone = Object.fromEntries((data.iphone || []).map((d) => [d.day, d.seconds]));
+  const drawn = todayRec ? todayRec.work_seconds / 60 : (daily[today] || {}).drawn_min || 0;
+  const goal = Number(ini(settings, "gohoubi", "goal_minutes", 120));
+  const sets = Number(ini(settings, "pomodoro", "sets", 6));
+  const week = Array.from({ length: 7 }, (_, i) => iso(addDays(fromIso(today), i - 6)));
+  const weekMin = week.map((d) => (d === today ? drawn : (daily[d] || {}).drawn_min || 0));
+  const stats = [
+    ["今日描いた時間", fmtMin(drawn)],
+    ["PCのYouTube", fmtMin(todayRec ? todayRec.youtube_day_seconds / 60 : (daily[today] || {}).youtube_min || 0)],
+    ["スマホのYouTube", fmtMin((iphone[today] || 0) / 60)],
+    ["叱られた回数", `${todayRec ? todayRec.scold_day : (daily[today] || {}).scolded || 0}回`],
+    ["ポモドーロ", `${todayRec ? (todayRec.pomo_drawn || []).length : 0} / ${sets}セット`],
+    ["この1週間", fmtMin(weekMin.reduce((a, b) => a + b, 0))],
+  ];
+  $("stats").innerHTML = stats.map(([kk, v]) => `<div><div class="k">${kk}</div><div class="v">${v}</div></div>`).join("");
+  setBar("goalBar", drawn, goal, "goalText", `${fmtMin(drawn)} / ${fmtMin(goal)}${drawn >= goal ? "　達成♡" : ""}`);
+
+  if (p) {
+    const entry = P.entry(p, today), perDay = P.perDay(p, today), remaining = P.remaining(p);
+    const line = (color, name, done, goalN, unit) => {
+      const ok = goalN && done >= goalN;
+      return `<span style="color:${color};font-weight:800">${ok ? "✔" : "□"} ${name}</span>　${done} / ${goalN}${unit}　<span class="sub">${ok ? "達成♡" : `あと${Math.max(0, goalN - done)}${unit}`}</span>`;
+    };
+    $("todoManga").innerHTML = line("var(--pink)", "エロ漫画", entry.advanced, entry.goal || perDay, "マス");
+    $("work").textContent = P.finished(p) ? `${p.project}　完成♡` : `${p.project}　${P.describe(p)}${p.current_page ? `　いま ${p.current_page}ページ目` : ""}`;
+    const detail = P.detail(p, entry);
+    $("workDetail").textContent = `残り ${remaining}マス・1日${perDay}マス　今日：${detail || "まだなし"}`;
+    setBar("projBar", P.doneCount(p), P.total(p), "projText", `全体 ${Math.round((P.doneCount(p) / P.total(p)) * 100)}%（${P.doneCount(p)} / ${P.total(p)}マス）`);
+    const s = P.stats(p);
+    let times = "1ページあたり　" + p.phases.map((ph) => `${ph} ${s[ph] ? fmtMin(s[ph][0] / 60) : "―"}`).join("・");
+    if (Object.keys(s).length && !P.finished(p)) {
+      const [sec, unknown] = P.estimate(p);
+      times += `\n残りの見こみ　約${fmtMin(sec / 60)}${unknown.length ? `（${unknown.join("・")}は記録なし）` : ""}`;
+    }
+    $("workTimes").textContent = times;
+    $("workTimes").style.whiteSpace = "pre-wrap";
+    // 締め切り（日の終わり 23:59:59 まで）
+    if (p.deadline) {
+      const day = fromIso(p.deadline);
+      $("dlWhen").textContent = `${p.project}　${day.getMonth() + 1}/${day.getDate()}（${WEEK[day.getDay()]}）`;
+      const end = new Date(day.getFullYear(), day.getMonth(), day.getDate(), 23, 59, 59);
+      let sec = Math.floor((end - now) / 1000);
+      if (P.finished(p)) $("dlCount").innerHTML = `<b style="color:var(--pink)">完成♡</b>`;
+      else if (sec <= 0) $("dlCount").innerHTML = `<span class="urgent big">締め切りの日をすぎました</span>`;
+      else {
+        const d = Math.floor(sec / 86400); sec %= 86400;
+        const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60);
+        $("dlCount").innerHTML = `<span class="${d < 2 ? "urgent" : ""}">あと <b>${d}</b>日 <span class="m">${h}</span>時間 <span class="m">${m}</span>分</span>`;
+      }
+      const behind = entry.advanced < perDay;
+      $("dlRest").innerHTML = `残り <b>${remaining}</b>マス　1日 <b>${perDay}</b>マス<br><span class="${behind ? "urgent" : "sub"}">今日 ${entry.advanced} / ${perDay}マス${behind ? "" : "　達成♡"}</span>`;
+    }
+  }
+
+  if (r) {
+    const pending = data.pending || 0;
+    const t = R.today(r, today) + pending, per = R.perDay(r, today);
+    $("todoRenshuu").innerHTML = `<span style="color:var(--renshuu);font-weight:800">${t >= per ? "✔" : "□"} 練習</span>　${t} / ${per}ページ　<span class="sub">${t >= per ? "達成♡" : `あと${per - t}ページ`}</span>`;
+    $("renshuu").textContent = R.finished(r) ? `${r.book}　完走♡` : `${r.book}　p.${r.done_page + pending}まで　今日 ${t} / ${per}`;
+    $("renshuuPending").textContent = pending ? `スマホから ${pending > 0 ? "+" : ""}${pending}ページ（PC が5分以内に記録します）` : "";
+    setBar("renshuuBar", R.done(r) + pending, R.total(r), "renshuuText", `累計 ${R.done(r) + pending} / ${R.total(r)}ページ`);
+    $("renshuuPace").textContent = `必要 1日${per}ページ ／ いまのペース 1日${R.pace(r, today).toFixed(1)}ページ → このままだと ${R.forecast(r, today)}`;
+    $("minus").disabled = t <= 0;
+  }
+
+  // 1週間のグラフ（目標の線つき）
+  const max = Math.max(goal, ...weekMin, 1) * 1.15, W = 340, H = 170, base = 140, top = 14, bw = 30;
+  const y = (m) => base - (m / max) * (base - top);
+  let svg = `<line x1="0" x2="${W}" y1="${y(goal)}" y2="${y(goal)}" stroke="var(--pink)" stroke-opacity=".5" stroke-dasharray="4 4"/>`;
+  svg += `<text x="2" y="${y(goal) - 4}">目標 ${fmtMin(goal)}</text>`;
+  week.forEach((d, i) => {
+    const x = 14 + i * ((W - 28) / 7) + ((W - 28) / 7 - bw) / 2, m = weekMin[i], dd = fromIso(d);
+    if (m > 0) {
+      svg += `<rect x="${x}" y="${y(m)}" width="${bw}" height="${base - y(m)}" rx="5" fill="var(--pink)" fill-opacity="${d === today ? 1 : 0.45}"><title>${d} ${fmtMin(m)}</title></rect>`;
+      svg += `<text x="${x + bw / 2}" y="${y(m) - 4}" text-anchor="middle">${Math.floor(m / 60)}h${pad(Math.round(m % 60))}</text>`;
+    }
+    // 日付と曜日は2段に（スマホの細い画面で重ならないように）
+    svg += `<text x="${x + bw / 2}" y="${H - 16}" text-anchor="middle">${dd.getMonth() + 1}/${dd.getDate()}</text>`;
+    svg += `<text x="${x + bw / 2}" y="${H - 2}" text-anchor="middle">${WEEK[dd.getDay()]}</text>`;
+  });
+  $("chart").innerHTML = svg;
+}
+
+function toast(text) {
+  const el = $("toast");
+  el.textContent = text;
+  el.classList.add("show");
+  clearTimeout(toast.t);
+  toast.t = setTimeout(() => el.classList.remove("show"), 2600);
+}
+
+async function load() {
+  const t = token();
+  if (!t) { $("login").hidden = false; $("app").hidden = true; return; }
+  try {
+    data = await rpc("phone_dashboard", { token: t });
+    $("login").hidden = true; $("app").hidden = false; $("err").textContent = "";
+    render();
+  } catch (e) {
+    if (e.invalid) {
+      storage(() => localStorage.removeItem(TOKEN_KEY));
+      $("login").hidden = false; $("app").hidden = true;
+      $("loginErr").textContent = "合言葉がちがうみたいです。";
+    } else {
+      $("app").hidden = !data; $("login").hidden = !!data;
+      $("err").textContent = `読みこめませんでした（${e.status || "通信"}）。電波を確かめて、もう一度開いてください。`;
+      if (!data) $("loginErr").textContent = $("err").textContent;
+    }
+  }
+}
+
+async function press(delta) {
+  $("plus").disabled = $("minus").disabled = true;
+  try {
+    await rpc("phone_renshuu", { token: token(), delta });
+    data.pending = (data.pending || 0) + delta;
+    render();
+    toast(delta > 0 ? "+1ページ、PC に送りました♡（5分以内に褒めてくれます）" : "−1ページ、PC に送りました");
+  } catch (e) {
+    toast("送れませんでした。もう一度押してください。");
+  } finally {
+    $("plus").disabled = false;
+    render();
+  }
+}
+
+$("plus").addEventListener("click", () => press(1));
+$("minus").addEventListener("click", () => press(-1));
+$("tokenSave").addEventListener("click", () => {
+  const v = $("tokenInput").value.trim().replace(/^.*[#&]t=/, "");
+  if (v) { storage(() => localStorage.setItem(TOKEN_KEY, v)); storage(() => sessionStorage.setItem(TOKEN_KEY, v)); $("loginErr").textContent = ""; load(); }
+});
+// 時計と締め切りは毎分、データは2分ごと・ページに戻ってきたときに読みなおす
+setInterval(render, 30 * 1000);
+setInterval(load, 2 * 60 * 1000);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) load(); });
+load();
+</script>
+</body>
+</html>

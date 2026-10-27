@@ -1,0 +1,9 @@
+{
+  "name": "アトリエ・エージェント",
+  "short_name": "アトリエ",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#fff8fb",
+  "theme_color": "#fff8fb",
+  "icons": [{ "src": "icon.png", "sizes": "512x512", "type": "image/png" }]
+}
