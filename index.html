@@ -51,6 +51,8 @@
   button { font: inherit; font-size: 14px; border-radius: 10px; border: 1px solid var(--line); background: var(--card);
            color: var(--text); padding: 10px 14px; min-height: 44px; }
   button.main { background: var(--renshuu); color: #fff; border: none; font-weight: 700; }
+  button.mode { width: 100%; margin-top: 8px; color: var(--renshuu); font-weight: 700; border-color: var(--renshuu); }
+  button.mode.on { background: var(--renshuu); color: #fff; }
   button:disabled { opacity: .5; }
   svg text { fill: var(--sub); font-size: 11px; }
   .toast { position: fixed; left: 50%; bottom: calc(20px + env(safe-area-inset-bottom)); transform: translateX(-50%);
@@ -129,6 +131,9 @@
       </div>
       <div class="bar" style="height:14px"><i id="renshuuBar"></i><span id="renshuuText"></span></div>
       <div style="font-size:13px" id="renshuuPace"></div>
+      <!-- 練習モード（2026-10-28）: 紙・iPad で練習しているあいだ押しておく。PC が練習した時間を数える -->
+      <button id="modeBtn" class="mode">✏ 練習スタート</button>
+      <div class="sub" id="modeSub"></div>
     </section>
 
     <section class="card">
@@ -304,7 +309,7 @@ function render() {
     const lv = K.level(k), low = K.levels[lv - 1], high = lv < 5 ? K.levels[lv] : 100;
     $("koTitle").innerHTML = `♡ なかよし度 Lv.${lv}　<span style="color:var(--text);font-weight:400">${K.names[lv - 1]}</span>　<span class="${k.sune ? "urgent" : "sub"}" style="font-weight:400">きげん: ${K.mood(k)}</span>`;
     setBar("koBar", k.points - low, high - low);
-    $("koSub").textContent = `${Math.floor(k.points)} / 100　${lv < 5 ? `次のレベルまで あと${Math.ceil(high - k.points)}` : "最高レベル♡"}`;
+    $("koSub").textContent = `${Math.floor(k.points - low)} / ${high - low}　${lv < 5 ? `次のレベルまで あと${Math.ceil(high - k.points)}` : "最高レベル♡"}　（合計 ${Math.floor(k.points)}）`;
   }
 
   // 今日の記録（kiroku.json が今日のものなら。PC がまだ今日動いていなければ 0）
@@ -322,6 +327,7 @@ function render() {
     ["スマホのYouTube", fmtMin((iphone[today] || 0) / 60)],
     ["叱られた回数", `${todayRec ? todayRec.scold_day : (daily[today] || {}).scolded || 0}回`],
     ["ポモドーロ", `${todayRec ? (todayRec.pomo_drawn || []).length : 0} / ${sets}セット`],
+    ["練習した時間", fmtMin(todayRec ? (todayRec.renshuu_seconds || 0) / 60 : 0)],
     ["この1週間", fmtMin(weekMin.reduce((a, b) => a + b, 0))],
   ];
   $("stats").innerHTML = stats.map(([kk, v]) => `<div><div class="k">${kk}</div><div class="v">${v}</div></div>`).join("");
@@ -374,6 +380,19 @@ function render() {
     $("renshuuPace").textContent = `必要 1日${per}ページ ／ いまのペース 1日${R.pace(r, today).toFixed(1)}ページ → このままだと ${R.forecast(r, today)}`;
     $("minus").disabled = t <= 0;
   }
+
+  // 練習モード: スマホで押したのがまだ PC に届いていなければ、そちらを優先して見せる
+  const pendingMode = data.pending_mode || 0;
+  const since = todayRec ? Number(todayRec.renshuu_mode_since || 0) : 0;
+  const modeOn = pendingMode ? pendingMode > 0 : since > 0;
+  const btn = $("modeBtn");
+  btn.classList.toggle("on", modeOn);
+  btn.textContent = modeOn
+    ? `✏ 練習中${since && !pendingMode ? ` ${Math.max(0, Math.floor((Date.now() / 1000 - since) / 60))}分` : ""}（おわる）`
+    : "✏ 練習スタート";
+  $("modeSub").textContent = pendingMode
+    ? `PC に送りました（5分以内に${pendingMode > 0 ? "はじまります" : "おわります"}）`
+    : "紙・iPad で練習するときに押すと、PC が練習した時間を数えます";
 
   // 1週間のグラフ（目標の線つき）
   const max = Math.max(goal, ...weekMin, 1) * 1.15, W = 340, H = 170, base = 140, top = 14, bw = 30;
@@ -436,6 +455,23 @@ async function press(delta) {
   }
 }
 
+async function pressMode() {
+  const btn = $("modeBtn");
+  const turnOn = !btn.classList.contains("on");
+  btn.disabled = true;
+  try {
+    await rpc("phone_renshuu_mode", { token: token(), turn_on: turnOn });
+    data.pending_mode = turnOn ? 1 : -1;
+    toast(turnOn ? "練習スタート、PC に送りました♡" : "練習おわり、PC に送りました♡（5分以内に褒めてくれます）");
+  } catch (e) {
+    toast("送れませんでした。もう一度押してください。");
+  } finally {
+    btn.disabled = false;
+    render();
+  }
+}
+
+$("modeBtn").addEventListener("click", pressMode);
 $("plus").addEventListener("click", () => press(1));
 $("minus").addEventListener("click", () => press(-1));
 $("tokenSave").addEventListener("click", () => {
